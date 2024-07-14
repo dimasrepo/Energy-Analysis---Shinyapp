@@ -1,0 +1,430 @@
+---
+title: "Capstone DV Shiny"
+author: "Dimas Aditya"
+date: "2024-06-23"
+output: html_document
+---
+
+```{r}
+#Data Preparation
+library(dplyr)
+library(lubridate)
+library(scales)
+library(tidyr)
+#visualisasi
+library(ggplot2)
+library(ggpubr)
+library(plotly)
+library(glue)
+library(treemapify)
+#Exporting Plot Statis
+library(ggpubr)
+library(sf)
+library(hrbrthemes)
+library(viridis)
+```
+- Mengetahui data konsumsi energi dunia -> Ambil 10 data negara tertinggi dari rata rata atau total seluruh negara. -> kategori 6
+- Melihat potensi pasar energi terbarukan dan nonterbarukan -> Membandingkan antara produksi dan konsumsi dengan melihat rasio atau gapnya -> total kategori  1 dan 6
+- Mengetahui komoditas energi nonterbarukan dan terbarukan potensi terbaik -> Membandingkan antara produksi dan konsumsi bedasarkan komoditas dengan melihat rasio atau gapnya -> Mean produksi perkomoditas seluruh negara (2.3.4.5,9 ) dan Mean konsumsi total (6,7) 
+
+Category List
+[1] Total energy production                               
+[2] Coal and lignite production                           
+[3] Refined oil products production                       
+[4] Natural gas production                                
+[5] Share of wind and solar in electricity production     
+[6] Total energy consumption                              
+[7] Share of electricity in total final energy consumption
+[8] Average emission factor                               
+[9] Share of renewables in electricity production         
+
+```{r}
+data <- read.csv("data_input/Energydata.csv") 
+data
+```
+```{r}
+nrow(data1)
+```
+
+```{r}
+data <- data %>% 
+  #Filter
+  #Merubah bentuk ke long format
+  pivot_longer(cols = c(X1990 : X2022),
+               names_to = "Year",
+               values_to = "values")
+data
+```
+
+```{r}
+data$Year <- substr(data$Year, 2,5)
+data
+```
+
+
+
+
+```{r}
+data <- select(data, Country, Category, Year,values)
+data
+```
+
+```{r}
+data <- data %>% 
+  mutate(
+    Category = as.character(Category),
+    values = as.numeric(values),
+    Year = ymd(paste0(Year, "-12-31"))
+  )
+data
+```
+
+
+```{r}
+# Menghitung rata-rata values berdasarkan Country, Category, dan Year
+average_values <- data %>%
+  ungroup() %>%  # Menghilangkan pengelompokan dari hasil summarize sebelumnya
+  group_by(Country, Category, Year) %>%
+  summarize(avg_value = mean(values, na.rm = TRUE))
+
+# Mengganti NA dengan rata-rata yang sesuai
+data1 <- data %>%
+  left_join(average_values, by = c("Country", "Category", "Year")) %>%
+  mutate(values = ifelse(is.na(values), avg_value, values)) %>%
+  select(-avg_value)  # Menghapus kolom avg_value yang tidak diperlukan lagi
+
+# Menampilkan hasil
+data1
+```
+```{r}
+exclude_countries <- c("World", "OECD", "Asia", "G7", "BRICS", "Europe", "European Union", "CIS", "America", "North America")
+
+# Filter the dataset
+data2 <- data1 %>% 
+  filter(!Country %in% exclude_countries)
+data2
+```
+
+```{r}
+data2 <- data2 %>%
+  mutate(
+    Country = case_when(
+      Country == "Czechia"        ~ "Czech Republic",
+      Country == "Turkiye"        ~ "Turkey",
+      Country == "North America"  ~ "United States Minor Outlying Islands",
+      Country == "Latin America"  ~ "Brazil",
+      Country == "South Korea"    ~ "Korea, Republic of",
+      Country == "Pacific"        ~ "Australia",
+      Country == "Africa"         ~ "South Africa",
+      Country == "Middle-East"    ~ "Iran",
+      Country == "Iran"           ~ "Iran (Islamic Republic of)",
+      TRUE                        ~ as.character(Country)
+    )
+  )
+```
+
+
+
+
+1. Mengetahui data konsumsi energi dunia -> Ambil 10 data negara tertinggi dari rata rata atau total seluruh negara. -> kategori 6
+
+```{r}
+#Data Energy Consumption Top 10 Countries
+datacon_top10 <- data2 %>%
+  filter(Category == "Total energy consumption") %>% 
+  group_by(Country, Category) %>% 
+  summarise(Mean = round(mean(values), digits = 2)) %>% 
+  ungroup() %>% arrange(-Mean) %>%  head(10)
+datacon_top10
+```
+
+
+
+```{r}
+#Data Energy Production Top 10 Countries
+dataemis_top10 <- data2 %>%
+  filter(Category == "Total energy production") %>% 
+  group_by(Country) %>% 
+  summarise(mean_values = mean(values)) %>% 
+  ungroup() %>% 
+  arrange(-mean_values) %>% head(10)
+dataemis_top10
+```
+
+
+
+```{r}
+#Total Data Categories Per Year Per Country
+datacatall <- data2 %>%
+  filter(Category == "Total energy production") %>% 
+  group_by(Country) %>% 
+  summarise(Mean = round(mean(values), digits = 2)) %>% 
+  ungroup() %>% 
+  arrange(-Mean) 
+datacatall
+```
+
+2. Melihat potensi pasar energi terbarukan dan nonterbarukan -> Membandingkan antara produksi dan konsumsi dengan melihat rasio atau gapnya -> total kategori  1 dan 6
+
+
+```{r}
+#Data Mean Consumtion vs Production Per Year
+dataconpro <- data2 %>%
+  filter(!Category %in% c("Average emission factor","Coal and lignite production", "Natural gas production", "Refined oil products production", "Share of electricity in total final energy consumption", "Share of renewables in electricity production", "Share of wind and solar in electricity production", "Average emission factor")) %>% 
+  group_by(Year,Category) %>%
+  summarize(total_values = round(mean(values), digits = 2)) %>%
+  arrange(Year,Category)  # Opsional: mengurutkan hasil berdasarkan Year dan Category
+
+# Menampilkan hasil
+dataconpro
+```
+
+```{r}
+#Data Mean Consumtion vs Production Per Year Per Country
+dataconpro <- data2 %>%
+  filter(!Category %in% c("Average emission factor","Coal and lignite production", "Natural gas production", "Refined oil products production", "Share of electricity in total final energy consumption", "Share of renewables in electricity production", "Share of wind and solar in electricity production", "Average emission factor")) %>% 
+  group_by(Category, Year) %>%
+  summarize(total_values = round(mean(values), digits = 2)) %>%
+  arrange(Year,Category)  # Opsional: mengurutkan hasil berdasarkan Year dan Category
+
+# Menampilkan hasil
+dataconpro
+```
+
+```{r}
+datacon_top10 <- datacon_top10 %>% 
+  mutate(labeling = glue ("Category : {Category}
+                          Count : {Mean}"))
+datacon_top10
+```
+
+```{r}
+datacon_top10 <- datacon_top10 %>% 
+  mutate(labeling = glue ("Category : {Category}
+                          Count : {Mean}"))
+datacon_top10
+```
+
+```{r}
+
+plot1 <- ggplot(datacon_top10, aes(x = Mean, y = reorder(Country, Mean),text = labeling)) +
+  geom_col(aes(fill = Mean)) + geom_hline(yintercept = 0) +
+  scale_fill_gradient2(low = "#02293b", mid = "#94c3e0", high = "#b3d2e6", midpoint = median(datacon_top10$Mean)) + 
+  labs(title = "Global Energy Overtime",
+       subtitle = "Top 10 Energy Consumtion",
+       caption = "Source: Energdata.info",
+       x = NULL, y = NULL) +
+  theme(legend.position = "bottom", 
+        plot.title = element_text(size = 15, hjust = 0.5),
+        plot.subtitle = element_text(size = 8, hjust = 0.5))
+plot1
+```
+
+```{r}
+ggplotly(plot1, tooltip = "text")
+```
+
+
+
+
+```{r}
+dataconpro <- dataconpro %>% 
+  mutate(labeling1 = glue ("Category : {Category}
+                          Count : {total_values}
+                          Year : {Year}"))
+```
+
+
+```{r}
+# Define custom colors
+custom_colors <- c("Total energy consumption" = "#3885bb",  # Blue
+                   "Total energy production" = "#bdd7e7")  # Grey
+
+# Create the plot with manual colors and points
+plot2 <- ggplot(dataconpro, aes(x = Year, y = total_values, color = Category, group = Category)) +
+  geom_line(size = 1, alpha = 0.9, linetype = 1) +
+  geom_point(aes(text = labeling1), size = 2 ) + 
+  scale_color_manual(values = custom_colors) +# Add points for each line
+  theme_minimal() +
+labs(title = "Global Energy Overtime",
+       subtitle = "Production | Consumtion",
+       caption = "Source: Energdata.info",
+       x = NULL, y = NULL) +
+  theme(legend.position = "top", 
+        plot.title = element_text(size = 15, hjust = 0.5),
+        plot.subtitle = element_text(size = 8, hjust = 0.5)) +
+  scale_fill_brewer(palette = "Blues") 
+ggplotly(plot2, tooltip = "text")
+```
+
+
+```{r}
+ggplotly(plot2, tooltip = "text")
+```
+
+
+
+
+
+
+
+
+```{r}
+
+# Library
+# library(streamgraph)
+ 
+# # Create data:
+# data <- data.frame(
+#   year=rep(seq(1990,2016) , each=10),
+#   name=rep(letters[1:10] , 27),
+#   value=sample( seq(0,1,0.0001) , 270)
+# )
+#  
+# # Stream graph with a legend
+# pp <- streamgraph(data, key="name", value="value", date="year", height="300px", width="1000px") %>%
+#   sg_legend(show=TRUE, label="names: ")
+```
+
+3. Mengetahui komoditas energi nonterbarukan dan terbarukan potensi terbaik -> Membandingkan antara produksi dan konsumsi bedasarkan komoditas dengan melihat rasio atau gapnya -> Mean produksi perkomoditas seluruh negara (2.3.4) dan Mean konsumsi total (6) 
+
+
+```{r}
+#Data Mean Comodity Vs Consumtion Per Year
+datakom <- data2 %>%
+  filter(!Category %in% c("Average emission factor", "Share of electricity in total final energy consumption", "Average emission factor", "Total energy production")) %>% 
+  group_by(Category, Year) %>%
+  summarize(total_values = mean(values, na.rm = TRUE)) %>%
+  arrange(Category)  # Opsional: mengurutkan hasil berdasarkan Year dan Category
+
+# Menampilkan hasil
+datakom
+```
+
+```{r}
+datakom <- datakom %>% 
+  mutate(labeling = glue ("Category : {Category}
+                          Count : {total_values}"))
+```
+
+```{r}
+# print(head(datakom_filtered))
+
+# Buat plot menggunakan ggplot2
+plot3 <- ggplot(datakom, aes(x = Year, y = total_values, fill = Category)) +
+  geom_area() + 
+  scale_x_date(date_breaks = "5 years", date_labels = "%Y") +
+  theme_classic() +
+  labs(title = "Global Energy Overtime",
+       subtitle = "Energy Production Data",
+       caption = "Source: Energdata.info",
+       x = "Year", y = NULL) +
+  theme(legend.position = "top", 
+        plot.title = element_text(size = 15, hjust = 0.5),
+        plot.subtitle = element_text(size = 8, hjust = 0.5)) +
+  scale_fill_brewer(palette = "Blues")
+# Menampilkan plot
+ggplotly(plot3)
+```
+
+```{r}
+datacatall <- data2 %>%
+  filter(Category == "Total energy consumption") %>% 
+  group_by(Country) %>% 
+  summarise(Mean = round(mean(values), digits = 2)) %>% 
+  ungroup() %>% 
+  arrange(desc(Mean))# Mengurutkan berdasarkan Mean dari yang terbesar ke terkecil
+
+datacatall
+```
+
+
+```{r}
+#------------------ read ------------------------#
+shapefile_path <- "C:/Dimas/Docs/Me/Algoritma/Material/Capstone/DV/data_input/world_shape_file/TM_WORLD_BORDERS_SIMPL-0.3.shp"
+world <- st_read(shapefile_path)
+#------------------ join ------------------------#
+map_data <- left_join(world, datacatall, by = c("NAME" = "Country"))
+```
+
+
+```{r}
+map_data <- map_data %>% 
+  mutate(Country = glue ("{NAME}"))
+```
+
+```{r}
+#------------------ plot ------------------------#
+breaks <- pretty_breaks(n = 6)(map_data$Mean)
+plot4 <-
+  ggplot(map_data) +
+  geom_sf(aes(label = Country, fill = Mean)) +
+  scale_fill_gradient2(name = NULL,
+                       low = "#ffffcc", mid = "#bdd7e7", high = "#08519c",  
+                       breaks = breaks) +
+  labs(title = "World Energy Consumtion",
+    subtitle = NULL,
+    caption = "Source: Energdata.info") +                          
+  theme_minimal() +
+  theme(
+    # Legend
+    legend.position = "top",                       
+    legend.justification = 0.5,                   
+    legend.key.size = unit(0.5, "cm"),            
+    legend.key.width = unit(1, "cm"),           
+    legend.text = element_text(size = 8),         
+    legend.margin = margin(),                      
+    # Judul dan Subjudul
+    plot.title = element_text(size = 20, hjust = 0.5),  
+    plot.subtitle = element_text(size = 8, hjust = 0.5)                
+  )
+
+ggplotly(plot4)
+```
+
+```{r}
+plot5 <- ggplot(map_data) +
+  geom_sf(aes(fill = Mean, label = NAME), lwd = 0.5, color = "white") +
+  scale_fill_gradient2(name = NULL,
+                       low = "#ffffcc", mid = "#bdd7e7", high = "#08519c",  # Warna rendah dan tinggi
+                       breaks = breaks) +            # Titik-titik breaks
+  labs(title = "Global Energy Overtime",
+    subtitle = "World Energy Consumtion 1990 - 2022",
+    caption = "Source: Energdata.info") +                          
+  theme_minimal() +                                # Tema minimal
+  theme(
+    # Legend
+    legend.position = "top",                       # Posisi legenda di atas
+    legend.justification = 0.5,                    # Posisi legenda di tengah
+    legend.key.size = unit(0.3, "cm"),            # Ukuran kotak kunci legenda
+    legend.key.width = unit(1, "cm"),           # Lebar kotak kunci legenda
+    legend.text = element_text(size = 5),         # Ukuran teks legenda
+    legend.margin = margin(),                      # Margin legenda
+    # Judul dan Subjudul
+    plot.title = element_text(size = 20, hjust = 0.5),  # Ukuran dan posisi horizontal judul
+    plot.subtitle = element_text(size = 8, hjust = 0.5)                # Menghapus subjudul
+  )
+plot5
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
